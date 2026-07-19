@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+sessions/
+*.session
+*.session-journal
+config.json
+*.db
+*.log
+nohup.out
