@@ -254,6 +254,15 @@ async function performSearch(type, query, limit, isLoadMore = false) {
         resultsContainer.innerHTML = '';
         searchLoading.classList.remove('hidden');
         
+        let mode = 'normal';
+        if (type === 'messages') {
+            const checked = document.querySelector('input[name="search-mode-messages"]:checked');
+            if (checked) mode = checked.value;
+        } else if (type === 'hashtag') {
+            const checked = document.querySelector('input[name="search-mode-hashtag"]:checked');
+            if (checked) mode = checked.value;
+        }
+
         // Reset pagination state for a fresh search
         paginationState = {
             type: type,
@@ -263,6 +272,7 @@ async function performSearch(type, query, limit, isLoadMore = false) {
             offset_id: 0,
             offset_peer_id: null,
             offset_peer_type: null,
+            mode: mode,
             has_more: false
         };
     }
@@ -270,11 +280,11 @@ async function performSearch(type, query, limit, isLoadMore = false) {
     try {
         let url = '';
         if (type === 'messages') {
-            url = `${API_BASE}/search/messages?query=${encodeURIComponent(query)}&limit=${limit}&offset_rate=${paginationState.next_rate}&offset_id=${paginationState.offset_id}&offset_peer_id=${paginationState.offset_peer_id || ''}&offset_peer_type=${paginationState.offset_peer_type || ''}`;
+            url = `${API_BASE}/search/messages?query=${encodeURIComponent(query)}&limit=${limit}&offset_rate=${paginationState.next_rate}&offset_id=${paginationState.offset_id}&offset_peer_id=${paginationState.offset_peer_id || ''}&offset_peer_type=${paginationState.offset_peer_type || ''}&mode=${paginationState.mode}`;
         } else if (type === 'chats') {
             url = `${API_BASE}/search/chats?query=${encodeURIComponent(query)}&limit=${limit}`;
         } else if (type === 'hashtag') {
-            url = `${API_BASE}/search/hashtag?hashtag=${encodeURIComponent(query)}&limit=${limit}&offset_rate=${paginationState.next_rate}&offset_id=${paginationState.offset_id}&offset_peer_id=${paginationState.offset_peer_id || ''}&offset_peer_type=${paginationState.offset_peer_type || ''}`;
+            url = `${API_BASE}/search/hashtag?hashtag=${encodeURIComponent(query)}&limit=${limit}&offset_rate=${paginationState.next_rate}&offset_id=${paginationState.offset_id}&offset_peer_id=${paginationState.offset_peer_id || ''}&offset_peer_type=${paginationState.offset_peer_type || ''}&mode=${paginationState.mode}`;
         } else if (type === 'user-groups') {
             url = `${API_BASE}/search/user-groups?username_or_id=${encodeURIComponent(query)}`;
         }

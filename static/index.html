@@ -171,6 +171,23 @@
                                     <i class="fas fa-search search-input-icon"></i>
                                     <input type="text" id="query-messages" placeholder="کلمه یا عبارت مورد نظر خود را جستجو کنید..." required>
                                 </div>
+                                <div class="search-mode-selector" style="margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                                    <label style="font-size: 0.9rem; color: var(--color-text); font-weight: 500;">نوع حساب تلگرام:</label>
+                                    <div class="mode-options" style="display: flex; gap: 20px;">
+                                        <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="search-mode-messages" value="normal" checked style="accent-color: var(--color-primary);">
+                                            <span>حساب معمولی (Normal)</span>
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="search-mode-messages" value="premium" style="accent-color: var(--color-primary);">
+                                            <span>حساب پرمیوم (Premium) ⭐</span>
+                                        </label>
+                                    </div>
+                                    <p class="search-mode-desc" style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 4px; line-height: 1.5;">
+                                        <strong>حالت معمولی:</strong> جستجو در تمام گروه‌ها، کانال‌ها و پی‌وی‌هایی که در آن‌ها عضو هستید (رایگان).<br>
+                                        <strong>حالت پرمیوم:</strong> جستجوی گلوبال در تمام پست‌های تلگرام بدون نیاز به عضویت در کانال‌ها (نیاز به اکانت پرمیوم).
+                                    </p>
+                                </div>
                                 <div class="search-options">
                                     <div class="range-control">
                                         <label for="limit-messages">تعداد نتایج: <span id="val-limit-messages">50</span></label>
@@ -212,6 +229,23 @@
                                 <div class="search-input-wrapper">
                                     <i class="fas fa-hashtag search-input-icon"></i>
                                     <input type="text" id="query-hashtag" placeholder="هشتگ مورد نظر را وارد کنید (مثال: خبر، بیتکوین)..." required dir="ltr">
+                                </div>
+                                <div class="search-mode-selector" style="margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                                    <label style="font-size: 0.9rem; color: var(--color-text); font-weight: 500;">نوع حساب تلگرام:</label>
+                                    <div class="mode-options" style="display: flex; gap: 20px;">
+                                        <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="search-mode-hashtag" value="normal" checked style="accent-color: var(--color-primary);">
+                                            <span>حساب معمولی (Normal)</span>
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="search-mode-hashtag" value="premium" style="accent-color: var(--color-primary);">
+                                            <span>حساب پرمیوم (Premium) ⭐</span>
+                                        </label>
+                                    </div>
+                                    <p class="search-mode-desc" style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 4px; line-height: 1.5;">
+                                        <strong>حالت معمولی:</strong> جستجو در تمام گروه‌ها، کانال‌ها و پی‌وی‌هایی که در آن‌ها عضو هستید (رایگان).<br>
+                                        <strong>حالت پرمیوم:</strong> جستجوی گلوبال در تمام پست‌های تلگرام بدون نیاز به عضویت در کانال‌ها (نیاز به اکانت پرمیوم).
+                                    </p>
                                 </div>
                                 <div class="search-options">
                                     <div class="range-control">
