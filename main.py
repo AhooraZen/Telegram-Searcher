@@ -1,5 +1,6 @@
 import os
 import json
+import sqlite3
 import asyncio
 import threading
 import urllib.parse
@@ -16,6 +17,34 @@ from telethon.tl.types import InputMessagesFilterEmpty, InputPeerEmpty
 CONFIG_FILE = "config.json"
 SESSION_DIR = "sessions"
 os.makedirs(SESSION_DIR, exist_ok=True)
+DB_FILE = "telegram_database.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS chats (
+        id INTEGER PRIMARY KEY,
+        title TEXT,
+        username TEXT,
+        type TEXT,
+        member_count INTEGER
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS members (
+        user_id INTEGER,
+        first_name TEXT,
+        last_name TEXT,
+        username TEXT,
+        chat_id INTEGER,
+        PRIMARY KEY (user_id, chat_id)
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
 
 # ----------------- Async Loop in Background Thread -----------------
 loop = asyncio.new_event_loop()
@@ -35,6 +64,7 @@ class TelegramManager:
         self.api_hash: Optional[str] = None
         self.phone: Optional[str] = None
         self.phone_code_hash: Optional[str] = None
+        self.crawling_status: Dict[str, Any] = {}
         self.load_config()
 
     def load_config(self):
@@ -376,29 +406,154 @@ class TelegramManager:
         ))
         
         chats_list = []
+        seen_ids = set()
+        
+        # 1. Process live common chats
         for chat in result.chats:
             is_channel = isinstance(chat, types.Channel)
             is_group = is_channel and not getattr(chat, 'broadcast', False)
             is_broadcast = is_channel and getattr(chat, 'broadcast', False)
             chat_type = "group" if is_group else ("channel" if is_broadcast else "chat")
             
+            seen_ids.add(chat.id)
             chats_list.append({
                 "id": chat.id,
                 "title": chat.title,
                 "username": getattr(chat, 'username', None),
                 "type": chat_type,
                 "participants_count": getattr(chat, 'participants_count', None),
-                "link": f"https://t.me/{chat.username}" if getattr(chat, 'username', None) else None
+                "link": f"https://t.me/{chat.username}" if getattr(chat, 'username', None) else None,
+                "source": "live"
             })
+
+        # 2. Process database memberships
+        try:
+            target_id = None
+            if hasattr(target, 'user_id'):
+                target_id = target.user_id
+            elif hasattr(target, 'id'):
+                target_id = target.id
+            
+            if not target_id:
+                try:
+                    full_user = await self.client.get_entity(target)
+                    target_id = full_user.id
+                except Exception:
+                    pass
+
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            rows = []
+            if target_id:
+                cursor.execute("""
+                SELECT c.id, c.title, c.username, c.type, c.member_count 
+                FROM chats c JOIN members m ON c.id = m.chat_id 
+                WHERE m.user_id = ?
+                """, (target_id,))
+                rows = cursor.fetchall()
+            
+            if not rows and not username_or_id.isdigit():
+                clean_username = username_or_id.lstrip('@').strip().lower()
+                cursor.execute("""
+                SELECT c.id, c.title, c.username, c.type, c.member_count 
+                FROM chats c JOIN members m ON c.id = m.chat_id 
+                WHERE LOWER(m.username) = ? OR LOWER(m.username) LIKE ?
+                """, (clean_username, f"%{clean_username}%"))
+                rows = cursor.fetchall()
+
+            for row in rows:
+                chat_id = row[0]
+                if chat_id not in seen_ids:
+                    seen_ids.add(chat_id)
+                    chats_list.append({
+                        "id": chat_id,
+                        "title": row[1],
+                        "username": row[2],
+                        "type": row[3],
+                        "participants_count": row[4],
+                        "link": f"https://t.me/{row[2]}" if row[2] else None,
+                        "source": "database"
+                    })
+            conn.close()
+        except Exception as e:
+            print(f"Error querying local DB for user groups: {e}")
 
         return {
             "results": chats_list,
-            "note": "Telegram API restricts user group queries. This list only shows public channels/groups that you (the logged-in account) share in common with the target user."
+            "note": "این لیست ترکیبی از گروه‌های مشترک زنده و گروه‌های ذخیره شده در دیتابیس محلی شما است."
         }
 
     def search_user_groups(self, username_or_id: str) -> Dict[str, Any]:
         future = asyncio.run_coroutine_threadsafe(self._search_user_groups_async(username_or_id), loop)
         return future.result()
+
+    async def _crawl_group_async(self, group_username_or_id: str):
+        self.crawling_status[group_username_or_id] = {
+            "status": "crawling",
+            "crawled": 0,
+            "total": 0,
+            "error": None
+        }
+        
+        try:
+            if not self.client:
+                raise Exception("Client not initialized")
+            
+            # Resolve group
+            try:
+                if group_username_or_id.isdigit():
+                    entity = await self.client.get_entity(int(group_username_or_id))
+                else:
+                    clean_group = group_username_or_id.lstrip('@').strip()
+                    if 't.me/' in clean_group:
+                        clean_group = clean_group.split('/')[-1]
+                    entity = await self.client.get_entity(clean_group)
+            except Exception as e:
+                raise Exception(f"Could not resolve group: {str(e)}")
+
+            if not isinstance(entity, (types.Chat, types.Channel)):
+                raise Exception("Entity is not a group or channel")
+
+            chat_type = "group"
+            if isinstance(entity, types.Channel) and getattr(entity, 'broadcast', False):
+                chat_type = "channel"
+            elif isinstance(entity, types.Chat):
+                chat_type = "group"
+            
+            member_count = getattr(entity, 'participants_count', 0)
+            
+            # Save group details to DB
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR REPLACE INTO chats VALUES (?, ?, ?, ?, ?)", 
+                           (entity.id, entity.title, entity.username, chat_type, member_count))
+            conn.commit()
+            
+            self.crawling_status[group_username_or_id]["total"] = member_count or 0
+            
+            # Scrape members
+            count = 0
+            async for user in self.client.iter_participants(entity):
+                cursor.execute("INSERT OR REPLACE INTO members VALUES (?, ?, ?, ?, ?)",
+                               (user.id, user.first_name or "", user.last_name or "", user.username or "", entity.id))
+                count += 1
+                if count % 100 == 0:
+                    conn.commit()
+                    self.crawling_status[group_username_or_id]["crawled"] = count
+            
+            conn.commit()
+            conn.close()
+            
+            self.crawling_status[group_username_or_id]["status"] = "completed"
+            self.crawling_status[group_username_or_id]["crawled"] = count
+            
+        except Exception as e:
+            self.crawling_status[group_username_or_id]["status"] = "failed"
+            self.crawling_status[group_username_or_id]["error"] = str(e)
+
+    def crawl_group(self, group_username_or_id: str) -> Dict[str, Any]:
+        asyncio.run_coroutine_threadsafe(self._crawl_group_async(group_username_or_id), loop)
+        return {"status": "started"}
 
 
 manager = TelegramManager()
@@ -522,6 +677,9 @@ class TelegramSearchHTTPHandler(BaseHTTPRequestHandler):
                     res = manager.search_user_groups(u)
                     self.send_json(200, res)
                 
+                elif path == "/api/crawl/status":
+                    self.send_json(200, manager.crawling_status)
+                
                 else:
                     self.send_error_json(404, "Endpoint not found")
             except Exception as e:
@@ -593,6 +751,13 @@ class TelegramSearchHTTPHandler(BaseHTTPRequestHandler):
                 elif path == "/api/logout":
                     manager.logout()
                     self.send_json(200, {"status": "disconnected"})
+
+                elif path == "/api/crawl":
+                    group = str(data.get("group", "")).strip()
+                    if not group:
+                        return self.send_error_json(400, "Group username/ID is required")
+                    res = manager.crawl_group(group)
+                    self.send_json(200, res)
 
                 else:
                     self.send_error_json(404, "Endpoint not found")

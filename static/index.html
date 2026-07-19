@@ -156,6 +156,9 @@
                     <button class="tab-btn" data-tab="tab-user-groups">
                         <i class="fas fa-users-cog"></i> بررسی عضویت کاربر
                     </button>
+                    <button class="tab-btn" data-tab="tab-crawler">
+                        <i class="fas fa-database"></i> بانک اطلاعاتی و خزش
+                    </button>
                 </div>
 
                 <!-- Tab Contents -->
@@ -239,6 +242,41 @@
                                     <i class="fas fa-users-cog"></i> بررسی گروه‌های مشترک
                                 </button>
                             </form>
+                        </div>
+                    </div>
+
+                    <!-- Tab 5: Crawler DB -->
+                    <div id="tab-crawler" class="tab-pane">
+                        <div class="card search-control-card">
+                            <div class="alert alert-info mb-15">
+                                <i class="fas fa-database"></i>
+                                <span>با وارد کردن نام کاربری یا لینک یک گروه عمومی، اعضای آن استخراج شده و در دیتابیس لوکال SQLite ذخیره می‌شوند. پس از آن، هنگام بررسی عضویت هر کاربر، دیتابیس آفلاین نیز جستجو می‌شود تا مشخص شود کاربر در کدام یک از گروه‌های ایندکس شده عضو است.</span>
+                            </div>
+                            <form id="form-crawl-group" class="search-form">
+                                <div class="search-input-wrapper">
+                                    <i class="fas fa-filter search-input-icon"></i>
+                                    <input type="text" id="query-crawl-group" placeholder="نام کاربری یا لینک عمومی گروه (مثال: @group_username)..." required dir="ltr">
+                                </div>
+                                <button type="submit" class="btn btn-accent">
+                                    <i class="fas fa-cogs"></i> شروع استخراج و ایندکس اعضا
+                                </button>
+                            </form>
+                            
+                            <!-- Crawler Status Area -->
+                            <div id="crawler-progress-container" class="crawler-progress-container hidden" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+                                <h4 style="margin-bottom: 10px;"><i class="fas fa-tasks"></i> وضعیت فرآیند خزش:</h4>
+                                <div class="progress-info" style="display:flex; justify-content:space-between; font-size:0.9rem; margin-bottom:5px;">
+                                    <span id="crawler-target-name">گروه: -</span>
+                                    <span id="crawler-percent">0%</span>
+                                </div>
+                                <div class="progress-bar-bg" style="width:100%; height:10px; background:var(--bg-input); border-radius:5px; overflow:hidden; margin-bottom:10px;">
+                                    <div id="crawler-bar" style="width:0%; height:100%; background:var(--color-success); transition:width 0.3s ease;"></div>
+                                </div>
+                                <div class="progress-details" style="font-size:0.85rem; color:var(--color-text-muted); display:flex; justify-content:space-between;">
+                                    <span id="crawler-processed">تعداد استخراج شده: 0</span>
+                                    <span id="crawler-status-label">وضعیت: در حال آماده‌سازی...</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

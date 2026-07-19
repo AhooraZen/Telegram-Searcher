@@ -363,6 +363,8 @@ function renderResults(type, results, query, note = null) {
                         <span class="chat-title">${chat.title} ${badges}</span>
                         <div class="chat-badges">
                             <span class="chat-type">${typeLabel}</span>
+                            ${chat.source === 'live' ? `<span class="chat-type" style="background:rgba(0,176,116,0.15); border:1px solid rgba(0,176,116,0.3); color:#00b074; font-weight:bold; font-size:0.7rem;">زنده (مشترک)</span>` : ''}
+                            ${chat.source === 'database' ? `<span class="chat-type" style="background:rgba(255,170,0,0.15); border:1px solid rgba(255,170,0,0.3); color:#ffaa00; font-weight:bold; font-size:0.7rem;">دیتابیس (آفلاین)</span>` : ''}
                             <span>${memberCount}</span>
                             ${chat.username ? `<span style="color:var(--color-accent);">@${chat.username}</span>` : ''}
                         </div>
@@ -487,6 +489,13 @@ function setupEventListeners() {
         const query = document.getElementById('query-user-groups').value.trim();
         performSearch('user-groups', query, null);
     });
+
+    // Crawler Form Submit
+    document.getElementById('form-crawl-group').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const group = document.getElementById('query-crawl-group').value.trim();
+        startCrawling(group);
+    });
 }
 
 function showLoading(show) {
@@ -552,4 +561,93 @@ function formatNumber(num) {
         return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
     }
     return num;
+}
+
+let crawlInterval = null;
+
+async function startCrawling(group) {
+    const btn = document.querySelector('#form-crawl-group button');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ارسال درخواست...';
+    
+    try {
+        const response = await fetch(`${API_BASE}/crawl`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'خطا در ثبت درخواست خزش');
+        
+        showToast('فرآیند خزش اعضا شروع شد', 'success');
+        document.getElementById('crawler-progress-container').classList.remove('hidden');
+        document.getElementById('crawler-target-name').textContent = `گروه: ${group}`;
+        
+        // Start polling
+        if (crawlInterval) clearInterval(crawlInterval);
+        crawlInterval = setInterval(pollCrawlerStatus, 2000);
+        pollCrawlerStatus();
+    } catch (error) {
+        showToast(error.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-cogs"></i> شروع استخراج و ایندکس اعضا';
+    }
+}
+
+async function pollCrawlerStatus() {
+    try {
+        const response = await fetch(`${API_BASE}/crawl/status`);
+        const data = await response.json();
+        
+        // Get the latest active or completed crawl
+        const keys = Object.keys(data);
+        if (keys.length === 0) return;
+        
+        const latestKey = keys[keys.length - 1];
+        const crawl = data[latestKey];
+        
+        const bar = document.getElementById('crawler-bar');
+        const percentLabel = document.getElementById('crawler-percent');
+        const processedLabel = document.getElementById('crawler-processed');
+        const statusLabel = document.getElementById('crawler-status-label');
+        const targetLabel = document.getElementById('crawler-target-name');
+        const btn = document.querySelector('#form-crawl-group button');
+        
+        targetLabel.textContent = `گروه: ${latestKey}`;
+        processedLabel.textContent = `تعداد استخراج شده: ${crawl.crawled} ${crawl.total ? 'از ' + crawl.total : ''}`;
+        
+        let percent = 0;
+        if (crawl.total > 0) {
+            percent = Math.min(Math.round((crawl.crawled / crawl.total) * 100), 100);
+        } else if (crawl.status === 'completed') {
+            percent = 100;
+        } else {
+            percent = 0;
+        }
+        
+        bar.style.width = `${percent}%`;
+        percentLabel.textContent = `${percent}%`;
+        
+        if (crawl.status === 'crawling') {
+            statusLabel.textContent = 'وضعیت: در حال استخراج اعضا...';
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال خزش...';
+        } else if (crawl.status === 'completed') {
+            statusLabel.textContent = 'وضعیت: با موفقیت تکمیل شد!';
+            bar.style.backgroundColor = 'var(--color-success)';
+            clearInterval(crawlInterval);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-cogs"></i> شروع استخراج و ایندکس اعضا';
+            showToast('عملیات خزش و ایندکس اعضای گروه با موفقیت به پایان رسید!', 'success');
+        } else if (crawl.status === 'failed') {
+            statusLabel.textContent = `وضعیت: شکست خورد (${crawl.error})`;
+            bar.style.backgroundColor = 'var(--color-danger)';
+            clearInterval(crawlInterval);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-cogs"></i> شروع استخراج و ایندکس اعضا';
+            showToast(`خزش با خطا مواجه شد: ${crawl.error}`, 'error');
+        }
+    } catch (e) {
+        console.error('Error polling crawl status:', e);
+    }
 }
