@@ -6,6 +6,17 @@ let appState = {
     phone: null
 };
 
+let paginationState = {
+    type: null,
+    query: null,
+    limit: 50,
+    next_rate: 0,
+    offset_id: 0,
+    offset_peer_id: null,
+    offset_peer_type: null,
+    has_more: false
+};
+
 // Screens
 const initialLoading = document.getElementById('initial-loading');
 const screenConfigure = document.getElementById('screen-configure');
@@ -232,18 +243,38 @@ async function logout() {
 }
 
 // --- Search Functions ---
-async function performSearch(type, query, limit) {
-    resultsContainer.innerHTML = '';
-    searchLoading.classList.remove('hidden');
+async function performSearch(type, query, limit, isLoadMore = false) {
+    if (isLoadMore) {
+        const btn = document.getElementById('btn-load-more');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال بارگذاری پیام‌های بیشتر...';
+        }
+    } else {
+        resultsContainer.innerHTML = '';
+        searchLoading.classList.remove('hidden');
+        
+        // Reset pagination state for a fresh search
+        paginationState = {
+            type: type,
+            query: query,
+            limit: limit,
+            next_rate: 0,
+            offset_id: 0,
+            offset_peer_id: null,
+            offset_peer_type: null,
+            has_more: false
+        };
+    }
     
     try {
         let url = '';
         if (type === 'messages') {
-            url = `${API_BASE}/search/messages?query=${encodeURIComponent(query)}&limit=${limit}`;
+            url = `${API_BASE}/search/messages?query=${encodeURIComponent(query)}&limit=${limit}&offset_rate=${paginationState.next_rate}&offset_id=${paginationState.offset_id}&offset_peer_id=${paginationState.offset_peer_id || ''}&offset_peer_type=${paginationState.offset_peer_type || ''}`;
         } else if (type === 'chats') {
             url = `${API_BASE}/search/chats?query=${encodeURIComponent(query)}&limit=${limit}`;
         } else if (type === 'hashtag') {
-            url = `${API_BASE}/search/hashtag?hashtag=${encodeURIComponent(query)}&limit=${limit}`;
+            url = `${API_BASE}/search/hashtag?hashtag=${encodeURIComponent(query)}&limit=${limit}&offset_rate=${paginationState.next_rate}&offset_id=${paginationState.offset_id}&offset_peer_id=${paginationState.offset_peer_id || ''}&offset_peer_type=${paginationState.offset_peer_type || ''}`;
         } else if (type === 'user-groups') {
             url = `${API_BASE}/search/user-groups?username_or_id=${encodeURIComponent(query)}`;
         }
@@ -253,45 +284,92 @@ async function performSearch(type, query, limit) {
         
         if (!response.ok) throw new Error(data.detail || 'خطا در جستجو');
         
-        renderResults(type, data.results, query, data.note);
+        // Update pagination state
+        if (type === 'messages' || type === 'hashtag') {
+            paginationState.next_rate = data.next_rate || 0;
+            paginationState.offset_id = data.offset_id || 0;
+            paginationState.offset_peer_id = data.offset_peer_id;
+            paginationState.offset_peer_type = data.offset_peer_type;
+            paginationState.has_more = data.has_more || false;
+        }
+        
+        renderResults(type, data.results, query, data.note, isLoadMore);
+        
+        // Handle load more button
+        if (paginationState.has_more) {
+            const loadMoreDiv = document.createElement('div');
+            loadMoreDiv.id = 'load-more-container';
+            loadMoreDiv.className = 'load-more-container';
+            loadMoreDiv.style.textAlign = 'center';
+            loadMoreDiv.style.marginTop = '20px';
+            loadMoreDiv.style.marginBottom = '30px';
+            loadMoreDiv.innerHTML = `
+                <button id="btn-load-more" class="btn btn-outline" style="width: 250px;">
+                    <i class="fas fa-chevron-down"></i> مشاهده پیام‌های بیشتر
+                </button>
+            `;
+            resultsContainer.appendChild(loadMoreDiv);
+            
+            document.getElementById('btn-load-more').addEventListener('click', () => {
+                performSearch(paginationState.type, paginationState.query, paginationState.limit, true);
+            });
+        }
     } catch (error) {
         showToast(error.message, 'error');
-        resultsContainer.innerHTML = `
-            <div class="empty-state">
-                <i class="fas fa-exclamation-circle text-danger"></i>
-                <h3>عملیات ناموفق بود</h3>
-                <p>${error.message}</p>
-            </div>
-        `;
+        if (isLoadMore) {
+            const btn = document.getElementById('btn-load-more');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> خطا! تلاش مجدد';
+            }
+        } else {
+            resultsContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle text-danger"></i>
+                    <h3>عملیات ناموفق بود</h3>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
     } finally {
         searchLoading.classList.add('hidden');
     }
 }
 
 // --- UI Rendering Functions ---
-function renderResults(type, results, query, note = null) {
-    resultsContainer.innerHTML = '';
-    
-    if (note) {
-        const noteAlert = document.createElement('div');
-        noteAlert.className = 'alert alert-info mb-15';
-        noteAlert.innerHTML = `<i class="fas fa-info-circle"></i><span>${note}</span>`;
-        resultsContainer.appendChild(noteAlert);
+function renderResults(type, results, query, note = null, append = false) {
+    if (!append) {
+        resultsContainer.innerHTML = '';
+        if (note) {
+            const noteAlert = document.createElement('div');
+            noteAlert.className = 'alert alert-info mb-15';
+            noteAlert.innerHTML = `<i class="fas fa-info-circle"></i><span>${note}</span>`;
+            resultsContainer.appendChild(noteAlert);
+        }
+    } else {
+        const oldBtn = document.getElementById('load-more-container');
+        if (oldBtn) oldBtn.remove();
     }
 
     if (!results || results.length === 0) {
-        resultsContainer.innerHTML += `
-            <div class="empty-state">
-                <i class="fas fa-search-minus"></i>
-                <h3>نتیجه‌ای یافت نشد</h3>
-                <p>هیچ موردی منطبق با جستجوی شما پیدا نشد. لطفا کلمات متفاوتی را امتحان کنید.</p>
-            </div>
-        `;
+        if (!append) {
+            resultsContainer.innerHTML += `
+                <div class="empty-state">
+                    <i class="fas fa-search-minus"></i>
+                    <h3>نتیجه‌ای یافت نشد</h3>
+                    <p>هیچ موردی منطبق با جستجوی شما پیدا نشد. لطفا کلمات متفاوتی را امتحان کنید.</p>
+                </div>
+            `;
+        }
         return;
     }
 
-    const container = document.createElement('div');
-    container.className = 'results-list';
+    let container = resultsContainer.querySelector('.results-list');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'results-list';
+        resultsContainer.appendChild(container);
+    }
     
     if (type === 'messages' || type === 'hashtag') {
         results.forEach(msg => {

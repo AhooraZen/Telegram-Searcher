@@ -213,16 +213,31 @@ class TelegramManager:
         future = asyncio.run_coroutine_threadsafe(self._logout_async(), loop)
         future.result()
 
-    async def _search_messages_async(self, query: str, limit: int) -> Dict[str, Any]:
+    async def _search_messages_async(
+        self, 
+        query: str, 
+        limit: int, 
+        offset_rate: int = 0, 
+        offset_id: int = 0, 
+        offset_peer_id: Optional[int] = None, 
+        offset_peer_type: Optional[str] = None
+    ) -> Dict[str, Any]:
         if not self.client or not await self.client.is_user_authorized():
             raise Exception("Telegram client is not authorized")
+
+        offset_peer = InputPeerEmpty()
+        if offset_peer_id:
+            try:
+                offset_peer = await self.client.get_input_entity(int(offset_peer_id))
+            except Exception:
+                pass
 
         result = await self.client(SearchPostsRequest(
             query=query,
             hashtag=None,
-            offset_rate=0,
-            offset_peer=InputPeerEmpty(),
-            offset_id=0,
+            offset_rate=offset_rate,
+            offset_peer=offset_peer,
+            offset_id=offset_id,
             limit=limit
         ))
         
@@ -278,10 +293,47 @@ class TelegramManager:
                     "forwards": getattr(msg, 'forwards', None)
                 })
 
-        return {"results": messages_list}
+        next_rate = getattr(result, 'next_rate', 0)
+        next_offset_id = 0
+        next_offset_peer_id = None
+        next_offset_peer_type = None
+        
+        if result.messages:
+            last_msg = result.messages[-1]
+            next_offset_id = last_msg.id
+            if last_msg.peer_id:
+                if isinstance(last_msg.peer_id, types.PeerChannel):
+                    next_offset_peer_id = last_msg.peer_id.channel_id
+                    next_offset_peer_type = "channel"
+                elif isinstance(last_msg.peer_id, types.PeerChat):
+                    next_offset_peer_id = last_msg.peer_id.chat_id
+                    next_offset_peer_type = "chat"
+                elif isinstance(last_msg.peer_id, types.PeerUser):
+                    next_offset_peer_id = last_msg.peer_id.user_id
+                    next_offset_peer_type = "user"
 
-    def search_messages(self, query: str, limit: int) -> Dict[str, Any]:
-        future = asyncio.run_coroutine_threadsafe(self._search_messages_async(query, limit), loop)
+        return {
+            "results": messages_list,
+            "next_rate": next_rate,
+            "offset_id": next_offset_id,
+            "offset_peer_id": next_offset_peer_id,
+            "offset_peer_type": next_offset_peer_type,
+            "has_more": bool(next_rate or next_offset_id)
+        }
+
+    def search_messages(
+        self, 
+        query: str, 
+        limit: int,
+        offset_rate: int = 0, 
+        offset_id: int = 0, 
+        offset_peer_id: Optional[int] = None, 
+        offset_peer_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        future = asyncio.run_coroutine_threadsafe(
+            self._search_messages_async(query, limit, offset_rate, offset_id, offset_peer_id, offset_peer_type), 
+            loop
+        )
         return future.result()
 
     async def _search_chats_async(self, query: str, limit: int) -> Dict[str, Any]:
@@ -315,16 +367,31 @@ class TelegramManager:
         future = asyncio.run_coroutine_threadsafe(self._search_chats_async(query, limit), loop)
         return future.result()
 
-    async def _search_hashtag_async(self, hashtag: str, limit: int) -> Dict[str, Any]:
+    async def _search_hashtag_async(
+        self, 
+        hashtag: str, 
+        limit: int,
+        offset_rate: int = 0, 
+        offset_id: int = 0, 
+        offset_peer_id: Optional[int] = None, 
+        offset_peer_type: Optional[str] = None
+    ) -> Dict[str, Any]:
         if not self.client or not await self.client.is_user_authorized():
             raise Exception("Telegram client is not authorized")
+
+        offset_peer = InputPeerEmpty()
+        if offset_peer_id:
+            try:
+                offset_peer = await self.client.get_input_entity(int(offset_peer_id))
+            except Exception:
+                pass
 
         clean_tag = hashtag.lstrip('#')
         result = await self.client(SearchPostsRequest(
             hashtag=clean_tag,
-            offset_rate=0,
-            offset_peer=InputPeerEmpty(),
-            offset_id=0,
+            offset_rate=offset_rate,
+            offset_peer=offset_peer,
+            offset_id=offset_id,
             limit=limit
         ))
         
@@ -380,10 +447,47 @@ class TelegramManager:
                     "forwards": getattr(msg, 'forwards', None)
                 })
 
-        return {"results": messages_list}
+        next_rate = getattr(result, 'next_rate', 0)
+        next_offset_id = 0
+        next_offset_peer_id = None
+        next_offset_peer_type = None
+        
+        if result.messages:
+            last_msg = result.messages[-1]
+            next_offset_id = last_msg.id
+            if last_msg.peer_id:
+                if isinstance(last_msg.peer_id, types.PeerChannel):
+                    next_offset_peer_id = last_msg.peer_id.channel_id
+                    next_offset_peer_type = "channel"
+                elif isinstance(last_msg.peer_id, types.PeerChat):
+                    next_offset_peer_id = last_msg.peer_id.chat_id
+                    next_offset_peer_type = "chat"
+                elif isinstance(last_msg.peer_id, types.PeerUser):
+                    next_offset_peer_id = last_msg.peer_id.user_id
+                    next_offset_peer_type = "user"
 
-    def search_hashtag(self, hashtag: str, limit: int) -> Dict[str, Any]:
-        future = asyncio.run_coroutine_threadsafe(self._search_hashtag_async(hashtag, limit), loop)
+        return {
+            "results": messages_list,
+            "next_rate": next_rate,
+            "offset_id": next_offset_id,
+            "offset_peer_id": next_offset_peer_id,
+            "offset_peer_type": next_offset_peer_type,
+            "has_more": bool(next_rate or next_offset_id)
+        }
+
+    def search_hashtag(
+        self, 
+        hashtag: str, 
+        limit: int,
+        offset_rate: int = 0, 
+        offset_id: int = 0, 
+        offset_peer_id: Optional[int] = None, 
+        offset_peer_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        future = asyncio.run_coroutine_threadsafe(
+            self._search_hashtag_async(hashtag, limit, offset_rate, offset_id, offset_peer_id, offset_peer_type), 
+            loop
+        )
         return future.result()
 
     async def _search_user_groups_async(self, username_or_id: str) -> Dict[str, Any]:
@@ -649,9 +753,21 @@ class TelegramSearchHTTPHandler(BaseHTTPRequestHandler):
                 elif path == "/api/search/messages":
                     q = query_params.get("query", [""])[0]
                     limit = int(query_params.get("limit", [50])[0])
+                    offset_rate = int(query_params.get("offset_rate", [0])[0])
+                    offset_id = int(query_params.get("offset_id", [0])[0])
+                    
+                    offset_peer_id = query_params.get("offset_peer_id", [None])[0]
+                    offset_peer_type = query_params.get("offset_peer_type", [None])[0]
+                    if offset_peer_id == 'null' or offset_peer_id == 'None':
+                        offset_peer_id = None
+                    if offset_peer_type == 'null' or offset_peer_type == 'None':
+                        offset_peer_type = None
+
                     if not q:
                         return self.send_error_json(400, "Query parameter 'query' is required")
-                    res = manager.search_messages(q, limit)
+                    res = manager.search_messages(
+                        q, limit, offset_rate, offset_id, offset_peer_id, offset_peer_type
+                    )
                     self.send_json(200, res)
 
                 elif path == "/api/search/chats":
@@ -665,9 +781,21 @@ class TelegramSearchHTTPHandler(BaseHTTPRequestHandler):
                 elif path == "/api/search/hashtag":
                     h = query_params.get("hashtag", [""])[0]
                     limit = int(query_params.get("limit", [50])[0])
+                    offset_rate = int(query_params.get("offset_rate", [0])[0])
+                    offset_id = int(query_params.get("offset_id", [0])[0])
+                    
+                    offset_peer_id = query_params.get("offset_peer_id", [None])[0]
+                    offset_peer_type = query_params.get("offset_peer_type", [None])[0]
+                    if offset_peer_id == 'null' or offset_peer_id == 'None':
+                        offset_peer_id = None
+                    if offset_peer_type == 'null' or offset_peer_type == 'None':
+                        offset_peer_type = None
+
                     if not h:
                         return self.send_error_json(400, "Query parameter 'hashtag' is required")
-                    res = manager.search_hashtag(h, limit)
+                    res = manager.search_hashtag(
+                        h, limit, offset_rate, offset_id, offset_peer_id, offset_peer_type
+                    )
                     self.send_json(200, res)
 
                 elif path == "/api/search/user-groups":
