@@ -1,0 +1,555 @@
+// --- API State and DOM Elements ---
+const API_BASE = '/api';
+let appState = {
+    status: 'unconfigured', // unconfigured, disconnected, waiting_code, waiting_password, connected
+    user: null,
+    phone: null
+};
+
+// Screens
+const initialLoading = document.getElementById('initial-loading');
+const screenConfigure = document.getElementById('screen-configure');
+const screenAuth = document.getElementById('screen-auth');
+const screenDashboard = document.getElementById('screen-dashboard');
+
+// Auth Sub-steps
+const authStepPhone = document.getElementById('auth-step-phone');
+const authStepCode = document.getElementById('auth-step-code');
+const authStepPassword = document.getElementById('auth-step-password');
+const codeSentSubtitle = document.getElementById('code-sent-subtitle');
+
+// Profile Header
+const userProfile = document.getElementById('user-profile');
+const userDisplayName = document.getElementById('user-display-name');
+const btnLogout = document.getElementById('btn-logout');
+const footerActions = document.getElementById('footer-actions');
+const btnReconfigure = document.getElementById('btn-reconfigure');
+
+// Search Elements
+const resultsContainer = document.getElementById('results-container');
+const searchLoading = document.getElementById('search-loading');
+
+// Range labels auto update
+document.getElementById('limit-messages').addEventListener('input', (e) => {
+    document.getElementById('val-limit-messages').textContent = e.target.value;
+});
+document.getElementById('limit-chats').addEventListener('input', (e) => {
+    document.getElementById('val-limit-chats').textContent = e.target.value;
+});
+document.getElementById('limit-hashtag').addEventListener('input', (e) => {
+    document.getElementById('val-limit-hashtag').textContent = e.target.value;
+});
+
+// --- Initialize App ---
+document.addEventListener('DOMContentLoaded', () => {
+    checkStatus();
+    setupEventListeners();
+});
+
+// --- Status Management ---
+async function checkStatus() {
+    try {
+        const response = await fetch(`${API_BASE}/status`);
+        const data = await response.json();
+        updateState(data);
+    } catch (error) {
+        showToast('خطا در برقراری ارتباط با سرور', 'error');
+        console.error('Status check error:', error);
+    }
+}
+
+function updateState(newState) {
+    appState = { ...appState, ...newState };
+    
+    // Hide all main screens first
+    initialLoading.classList.add('hidden');
+    screenConfigure.classList.add('hidden');
+    screenAuth.classList.add('hidden');
+    screenDashboard.classList.add('hidden');
+    
+    // Hide auth sub-steps
+    authStepPhone.classList.add('hidden');
+    authStepCode.classList.add('hidden');
+    authStepPassword.classList.add('hidden');
+
+    // Reset profile header
+    userProfile.classList.add('hidden');
+    footerActions.classList.add('hidden');
+
+    switch (appState.status) {
+        case 'unconfigured':
+            screenConfigure.classList.remove('hidden');
+            break;
+            
+        case 'disconnected':
+            screenAuth.classList.remove('hidden');
+            authStepPhone.classList.remove('hidden');
+            footerActions.classList.remove('hidden');
+            break;
+            
+        case 'waiting_code':
+            screenAuth.classList.remove('hidden');
+            authStepCode.classList.remove('hidden');
+            codeSentSubtitle.textContent = `کد تایید ارسال شده به تلگرام شماره ${appState.phone} را وارد کنید:`;
+            footerActions.classList.remove('hidden');
+            break;
+            
+        case 'waiting_password':
+            screenAuth.classList.remove('hidden');
+            authStepPassword.classList.remove('hidden');
+            footerActions.classList.remove('hidden');
+            break;
+            
+        case 'connected':
+            screenDashboard.classList.remove('hidden');
+            userProfile.classList.remove('hidden');
+            footerActions.classList.remove('hidden');
+            
+            // Set user info
+            if (appState.user) {
+                const name = `${appState.user.first_name || ''} ${appState.user.last_name || ''}`.trim() || 'کاربر تلگرام';
+                const username = appState.user.username ? ` (@${appState.user.username})` : '';
+                userDisplayName.textContent = name + username;
+            }
+            break;
+            
+        case 'error':
+        default:
+            screenConfigure.classList.remove('hidden');
+            showToast(`خطای سیستم: ${appState.message || 'وضعیت نامشخص'}`, 'error');
+            break;
+    }
+}
+
+// --- API Request Functions ---
+async function configureAPI(apiId, apiHash) {
+    showLoading(true);
+    try {
+        const response = await fetch(`${API_BASE}/configure`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_id: apiId, api_hash: apiHash })
+        });
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.detail || 'خطا در ثبت مشخصات API');
+        
+        updateState(data);
+        showToast('مشخصات API با موفقیت ثبت شد', 'success');
+    } catch (error) {
+        showToast(error.message, 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function sendAuthCode(phone) {
+    showLoading(true);
+    try {
+        const response = await fetch(`${API_BASE}/send-code`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone })
+        });
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.detail || 'خطا در ارسال کد تایید');
+        
+        updateState(data);
+        showToast('کد تایید ارسال شد', 'success');
+    } catch (error) {
+        showToast(error.message, 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function verifyAuthCode(code) {
+    showLoading(true);
+    try {
+        const response = await fetch(`${API_BASE}/login-code`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+        });
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.detail || 'کد تایید نامعتبر است');
+        
+        updateState(data);
+        if (data.status === 'connected') {
+            showToast('با موفقیت وارد حساب کاربری شدید', 'success');
+            renderEmptyState();
+        } else if (data.status === 'waiting_password') {
+            showToast('رمز تایید دو مرحله‌ای مورد نیاز است', 'warning');
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function verifyPassword(password) {
+    showLoading(true);
+    try {
+        const response = await fetch(`${API_BASE}/login-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+        });
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.detail || 'رمز عبور نامعتبر است');
+        
+        updateState(data);
+        if (data.status === 'connected') {
+            showToast('ورود با تایید دومرحله‌ای موفقیت آمیز بود', 'success');
+            renderEmptyState();
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function logout() {
+    if (!confirm('آیا مطمئن هستید که می‌خواهید از حساب خود خارج شوید؟')) return;
+    
+    showLoading(true);
+    try {
+        const response = await fetch(`${API_BASE}/logout`, { method: 'POST' });
+        const data = await response.json();
+        updateState(data);
+        showToast('با موفقیت خارج شدید', 'success');
+        renderEmptyState();
+    } catch (error) {
+        showToast('خطا در انجام عملیات خروج', 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+// --- Search Functions ---
+async function performSearch(type, query, limit) {
+    resultsContainer.innerHTML = '';
+    searchLoading.classList.remove('hidden');
+    
+    try {
+        let url = '';
+        if (type === 'messages') {
+            url = `${API_BASE}/search/messages?query=${encodeURIComponent(query)}&limit=${limit}`;
+        } else if (type === 'chats') {
+            url = `${API_BASE}/search/chats?query=${encodeURIComponent(query)}&limit=${limit}`;
+        } else if (type === 'hashtag') {
+            url = `${API_BASE}/search/hashtag?hashtag=${encodeURIComponent(query)}&limit=${limit}`;
+        } else if (type === 'user-groups') {
+            url = `${API_BASE}/search/user-groups?username_or_id=${encodeURIComponent(query)}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.detail || 'خطا در جستجو');
+        
+        renderResults(type, data.results, query, data.note);
+    } catch (error) {
+        showToast(error.message, 'error');
+        resultsContainer.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-circle text-danger"></i>
+                <h3>عملیات ناموفق بود</h3>
+                <p>${error.message}</p>
+            </div>
+        `;
+    } finally {
+        searchLoading.classList.add('hidden');
+    }
+}
+
+// --- UI Rendering Functions ---
+function renderResults(type, results, query, note = null) {
+    resultsContainer.innerHTML = '';
+    
+    if (note) {
+        const noteAlert = document.createElement('div');
+        noteAlert.className = 'alert alert-info mb-15';
+        noteAlert.innerHTML = `<i class="fas fa-info-circle"></i><span>${note}</span>`;
+        resultsContainer.appendChild(noteAlert);
+    }
+
+    if (!results || results.length === 0) {
+        resultsContainer.innerHTML += `
+            <div class="empty-state">
+                <i class="fas fa-search-minus"></i>
+                <h3>نتیجه‌ای یافت نشد</h3>
+                <p>هیچ موردی منطبق با جستجوی شما پیدا نشد. لطفا کلمات متفاوتی را امتحان کنید.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'results-list';
+    
+    if (type === 'messages' || type === 'hashtag') {
+        results.forEach(msg => {
+            const card = document.createElement('div');
+            card.className = 'msg-card';
+            
+            // Format dates nicely
+            const dateStr = msg.date ? new Date(msg.date).toLocaleDateString('fa-IR', {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            }) : 'تاریخ نامشخص';
+
+            // Highlight words
+            const highlightedText = highlightText(msg.text, query);
+            
+            const initials = msg.peer_name ? msg.peer_name.charAt(0) : 'T';
+            const viewsCount = msg.views !== null ? formatNumber(msg.views) : '-';
+            const forwardsCount = msg.forwards !== null ? formatNumber(msg.forwards) : '-';
+            
+            card.innerHTML = `
+                <div class="msg-header">
+                    <div class="msg-source">
+                        <div class="source-avatar">${initials}</div>
+                        <div class="source-info">
+                            <span class="source-name">${msg.peer_name}</span>
+                            ${msg.peer_username ? `<span class="source-username">@${msg.peer_username}</span>` : `<span class="source-username">${msg.peer_type}</span>`}
+                        </div>
+                    </div>
+                    <div class="msg-meta">
+                        <span><i class="far fa-calendar-alt"></i> ${dateStr}</span>
+                    </div>
+                </div>
+                <div class="msg-body">${highlightedText}</div>
+                <div class="msg-card-footer">
+                    <div class="msg-meta">
+                        <span><i class="far fa-eye"></i> ${viewsCount} بازدید</span>
+                        <span><i class="fas fa-share"></i> ${forwardsCount} فوروارد</span>
+                    </div>
+                    <div class="msg-footer">
+                        ${msg.message_link ? `
+                            <a href="${msg.message_link}" target="_blank" class="btn btn-accent btn-sm">
+                                <i class="fab fa-telegram-plane"></i> مشاهده پیام
+                            </a>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    } else if (type === 'chats' || type === 'user-groups') {
+        results.forEach(chat => {
+            const card = document.createElement('div');
+            card.className = 'chat-card';
+            
+            const memberCount = chat.participants_count ? `${formatNumber(chat.participants_count)} عضو` : 'تعداد اعضا نامشخص';
+            
+            let badges = '';
+            if (chat.verified) badges += `<i class="fas fa-check-circle badge-verified" title="تایید شده"></i>`;
+            if (chat.scam) badges += `<span class="badge-scam">SCAM</span>`;
+            if (chat.fake) badges += `<span class="badge-scam" style="background:orange; border-color:orange;">FAKE</span>`;
+            
+            const typeLabel = chat.type === 'channel' ? 'کانال' : (chat.type === 'group' ? 'ابرگروه' : 'گفتگو');
+            
+            card.innerHTML = `
+                <div class="chat-details">
+                    <div class="source-avatar" style="width:40px; height:40px; font-size:1.1rem;">
+                        ${chat.title ? chat.title.charAt(0) : 'T'}
+                    </div>
+                    <div class="chat-title-group">
+                        <span class="chat-title">${chat.title} ${badges}</span>
+                        <div class="chat-badges">
+                            <span class="chat-type">${typeLabel}</span>
+                            <span>${memberCount}</span>
+                            ${chat.username ? `<span style="color:var(--color-accent);">@${chat.username}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-actions">
+                    ${chat.link ? `
+                        <a href="${chat.link}" target="_blank" class="btn btn-primary btn-sm">
+                            <i class="fab fa-telegram-plane"></i> عضویت
+                        </a>
+                    ` : ''}
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+    
+    resultsContainer.appendChild(container);
+}
+
+function renderEmptyState() {
+    resultsContainer.innerHTML = `
+        <div class="empty-state">
+            <i class="fas fa-search-plus"></i>
+            <h3>آماده برای جستجو</h3>
+            <p>از یکی از سربرگ‌های بالا برای شروع جستجوی عمومی استفاده کنید.</p>
+        </div>
+    `;
+}
+
+// --- Helper Functions ---
+function setupEventListeners() {
+    // Config Form
+    document.getElementById('form-configure').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const apiId = document.getElementById('api-id').value.trim();
+        const apiHash = document.getElementById('api-hash').value.trim();
+        configureAPI(apiId, apiHash);
+    });
+
+    // Phone Form
+    document.getElementById('form-phone').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const phone = document.getElementById('phone-number').value.trim();
+        sendAuthCode(phone);
+    });
+
+    // Code Form
+    document.getElementById('form-code').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const code = document.getElementById('auth-code').value.trim();
+        verifyAuthCode(code);
+    });
+
+    // Password Form
+    document.getElementById('form-password').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const password = document.getElementById('twofa-password').value.trim();
+        verifyPassword(password);
+    });
+
+    // Return to Phone
+    document.getElementById('btn-change-phone').addEventListener('click', () => {
+        appState.phone_code_hash = null;
+        updateState({ status: 'disconnected' });
+    });
+
+    // Logout
+    btnLogout.addEventListener('click', logout);
+    
+    // Reconfigure
+    const handleReconfig = () => {
+        if (confirm('آیا می‌خواهید کلیدهای API ثبت شده را تغییر دهید؟ با این کار اتصال فعلی قطع خواهد شد.')) {
+            configureAPI('', ''); // Clear credentials
+        }
+    };
+    btnReconfigure.addEventListener('click', handleReconfig);
+    const btnResetApiPhone = document.getElementById('btn-reset-api-phone');
+    if (btnResetApiPhone) {
+        btnResetApiPhone.addEventListener('click', handleReconfig);
+    }
+
+    // Tab Switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            
+            btn.classList.add('active');
+            const targetPane = document.getElementById(btn.getAttribute('data-tab'));
+            targetPane.classList.add('active');
+            
+            // Clear current search results
+            renderEmptyState();
+        });
+    });
+
+    // Search Forms
+    document.getElementById('form-search-messages').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const query = document.getElementById('query-messages').value.trim();
+        const limit = document.getElementById('limit-messages').value;
+        performSearch('messages', query, limit);
+    });
+
+    document.getElementById('form-search-chats').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const query = document.getElementById('query-chats').value.trim();
+        const limit = document.getElementById('limit-chats').value;
+        performSearch('chats', query, limit);
+    });
+
+    document.getElementById('form-search-hashtag').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const query = document.getElementById('query-hashtag').value.trim();
+        const limit = document.getElementById('limit-hashtag').value;
+        performSearch('hashtag', query, limit);
+    });
+
+    document.getElementById('form-search-user-groups').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const query = document.getElementById('query-user-groups').value.trim();
+        performSearch('user-groups', query, null);
+    });
+}
+
+function showLoading(show) {
+    const activeBtn = document.querySelector('.btn-block:not(.hidden), .auth-step:not(.hidden) .btn:not(.hidden)');
+    if (activeBtn) {
+        if (show) {
+            activeBtn.disabled = true;
+            activeBtn.dataset.originalHtml = activeBtn.innerHTML;
+            activeBtn.innerHTML = '<div class="spinner" style="width:20px; height:20px; border-width:2px; display:inline-block; margin:0;"></div> در حال پردازش...';
+        } else {
+            activeBtn.disabled = false;
+            if (activeBtn.dataset.originalHtml) {
+                activeBtn.innerHTML = activeBtn.dataset.originalHtml;
+            }
+        }
+    }
+}
+
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = 'toast'; // Reset
+    
+    if (type === 'error') toast.classList.add('toast-error');
+    if (type === 'success') toast.classList.add('toast-success');
+    
+    toast.classList.remove('hidden');
+    
+    // Auto hide
+    setTimeout(() => {
+        toast.classList.add('hidden');
+    }, 4000);
+}
+
+function highlightText(text, query) {
+    if (!text || !query) return text || '';
+    
+    // Escape regex characters
+    const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    
+    // Simple split query words to highlight individual parts if long search
+    const words = escapedQuery.split(/\s+/).filter(w => w.length > 1);
+    if (words.length === 0) words.push(escapedQuery);
+    
+    let highlighted = text;
+    try {
+        words.forEach(word => {
+            const regex = new RegExp(`(${word})`, 'gi');
+            highlighted = highlighted.replace(regex, '<mark class="highlight">$1</mark>');
+        });
+    } catch (e) {
+        console.error('Highlight regex error:', e);
+    }
+    
+    return highlighted;
+}
+
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    }
+    if (num >= 1000) {
+        return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    }
+    return num;
+}

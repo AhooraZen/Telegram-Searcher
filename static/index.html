@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>موتور جستجوی تلگرام | Telegram Global Search</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <i class="fab fa-telegram logo-icon"></i>
+                <div class="brand">
+                    <h1>جستجوگر سراسری تلگرام</h1>
+                    <p>Telegram Global Search Engine</p>
+                </div>
+            </div>
+            <div id="user-profile" class="user-profile hidden">
+                <span class="user-badge">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="user-display-name">کاربر</span>
+                </span>
+                <button id="btn-logout" class="btn btn-danger-outline btn-sm">
+                    <i class="fas fa-sign-out-alt"></i> خروج
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Body -->
+        <main class="app-main">
+            <!-- Loading Indicator for initial status check -->
+            <div id="initial-loading" class="initial-loading">
+                <div class="spinner"></div>
+                <p>در حال بررسی وضعیت اتصال...</p>
+            </div>
+
+            <!-- 1. Configure Screen -->
+            <section id="screen-configure" class="card form-card hidden">
+                <div class="card-header text-center">
+                    <i class="fas fa-tools header-icon text-primary"></i>
+                    <h2>تنظیمات اولیه API</h2>
+                    <p class="subtitle">برای شروع به کلیدهای API اکانت تلگرام نیاز دارید</p>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <span>برای دریافت <strong>API ID</strong> و <strong>API Hash</strong> به سایت <a href="https://my.telegram.org" target="_blank" class="link">my.telegram.org</a> مراجعه کرده و یک اپلیکیشن بسازید.</span>
+                    </div>
+                    
+                    <form id="form-configure">
+                        <div class="form-group">
+                            <label for="api-id"><i class="fas fa-key"></i> API ID:</label>
+                            <input type="text" id="api-id" placeholder="مثال: 123456" required dir="ltr">
+                        </div>
+                        <div class="form-group">
+                            <label for="api-hash"><i class="fas fa-fingerprint"></i> API Hash:</label>
+                            <input type="text" id="api-hash" placeholder="مثال: 0123456789abcdef0123456789abcdef" required dir="ltr">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">
+                            <i class="fas fa-save"></i> ذخیره تنظیمات
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- 2. Authentication Screen -->
+            <section id="screen-auth" class="card form-card hidden">
+                <!-- Phone input step -->
+                <div id="auth-step-phone" class="auth-step">
+                    <div class="card-header text-center">
+                        <i class="fas fa-phone-alt header-icon text-accent"></i>
+                        <h2>ورود به حساب تلگرام</h2>
+                        <p class="subtitle">شماره تلفن اکانت خود را وارد کنید</p>
+                    </div>
+                    <div class="card-body">
+                        <form id="form-phone">
+                            <div class="form-group">
+                                <label for="phone-number"><i class="fas fa-phone"></i> شماره تلفن (همراه با کد کشور):</label>
+                                <input type="tel" id="phone-number" placeholder="مثال: +989123456789" required dir="ltr">
+                            </div>
+                            <button type="submit" id="btn-send-code" class="btn btn-accent btn-block">
+                                <i class="fas fa-paper-plane"></i> ارسال کد تایید
+                            </button>
+                            <button type="button" id="btn-reset-api-phone" class="btn btn-outline btn-block" style="margin-top: 10px;">
+                                <i class="fas fa-cog"></i> تغییر کلیدهای API (تنظیم مجدد)
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Code input step -->
+                <div id="auth-step-code" class="auth-step hidden">
+                    <div class="card-header text-center">
+                        <i class="fas fa-shield-alt header-icon text-accent"></i>
+                        <h2>کد تایید تلگرام</h2>
+                        <p class="subtitle" id="code-sent-subtitle">کد ارسال شده به تلگرام را وارد کنید</p>
+                    </div>
+                    <div class="card-body">
+                        <form id="form-code">
+                            <div class="form-group">
+                                <label for="auth-code"><i class="fas fa-lock"></i> کد تایید تلگرام:</label>
+                                <input type="text" id="auth-code" placeholder="مثال: 12345" required dir="ltr" autocomplete="one-time-code">
+                            </div>
+                            <div class="btn-row">
+                                <button type="submit" class="btn btn-success flex-grow">
+                                    <i class="fas fa-check"></i> تایید کد
+                                </button>
+                                <button type="button" id="btn-change-phone" class="btn btn-outline">
+                                    بازگشت
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 2FA Password input step -->
+                <div id="auth-step-password" class="auth-step hidden">
+                    <div class="card-header text-center">
+                        <i class="fas fa-key header-icon text-warning"></i>
+                        <h2>رمز دو مرحله‌ای (2FA)</h2>
+                        <p class="subtitle">حساب شما دارای تایید دو مرحله‌ای است. رمز خود را وارد کنید.</p>
+                    </div>
+                    <div class="card-body">
+                        <form id="form-password">
+                            <div class="form-group">
+                                <label for="twofa-password"><i class="fas fa-lock"></i> رمز عبور:</label>
+                                <input type="password" id="twofa-password" placeholder="رمز عبور دو مرحله‌ای" required dir="ltr">
+                            </div>
+                            <button type="submit" class="btn btn-warning btn-block">
+                                <i class="fas fa-unlock"></i> تایید رمز عبور
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. Dashboard Screen -->
+            <section id="screen-dashboard" class="dashboard-container hidden">
+                <!-- Navigation Tabs -->
+                <div class="tabs-nav card">
+                    <button class="tab-btn active" data-tab="tab-messages">
+                        <i class="fas fa-search"></i> جستجوی کلمات
+                    </button>
+                    <button class="tab-btn" data-tab="tab-chats">
+                        <i class="fas fa-bullhorn"></i> جستجوی کانال و گروه
+                    </button>
+                    <button class="tab-btn" data-tab="tab-hashtag">
+                        <i class="fas fa-hashtag"></i> جستجوی هشتگ
+                    </button>
+                    <button class="tab-btn" data-tab="tab-user-groups">
+                        <i class="fas fa-users-cog"></i> بررسی عضویت کاربر
+                    </button>
+                </div>
+
+                <!-- Tab Contents -->
+                <div class="tabs-content">
+                    <!-- Tab 1: Messages Search -->
+                    <div id="tab-messages" class="tab-pane active">
+                        <div class="card search-control-card">
+                            <form id="form-search-messages" class="search-form">
+                                <div class="search-input-wrapper">
+                                    <i class="fas fa-search search-input-icon"></i>
+                                    <input type="text" id="query-messages" placeholder="کلمه یا عبارت مورد نظر خود را جستجو کنید..." required>
+                                </div>
+                                <div class="search-options">
+                                    <div class="range-control">
+                                        <label for="limit-messages">تعداد نتایج: <span id="val-limit-messages">50</span></label>
+                                        <input type="range" id="limit-messages" min="10" max="100" step="5" value="50">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-search"></i> جستجو در کل تلگرام
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Tab 2: Chats Search -->
+                    <div id="tab-chats" class="tab-pane">
+                        <div class="card search-control-card">
+                            <form id="form-search-chats" class="search-form">
+                                <div class="search-input-wrapper">
+                                    <i class="fas fa-compass search-input-icon"></i>
+                                    <input type="text" id="query-chats" placeholder="موضوع، نام یا دسته بندی (مثال: ارز دیجیتال، سرگرمی)..." required>
+                                </div>
+                                <div class="search-options">
+                                    <div class="range-control">
+                                        <label for="limit-chats">تعداد نتایج: <span id="val-limit-chats">50</span></label>
+                                        <input type="range" id="limit-chats" min="10" max="100" step="5" value="50">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-compass"></i> یافتن کانال و گروه
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Tab 3: Hashtag Search -->
+                    <div id="tab-hashtag" class="tab-pane">
+                        <div class="card search-control-card">
+                            <form id="form-search-hashtag" class="search-form">
+                                <div class="search-input-wrapper">
+                                    <i class="fas fa-hashtag search-input-icon"></i>
+                                    <input type="text" id="query-hashtag" placeholder="هشتگ مورد نظر را وارد کنید (مثال: خبر، بیتکوین)..." required dir="ltr">
+                                </div>
+                                <div class="search-options">
+                                    <div class="range-control">
+                                        <label for="limit-hashtag">تعداد نتایج: <span id="val-limit-hashtag">50</span></label>
+                                        <input type="range" id="limit-hashtag" min="10" max="100" step="5" value="50">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-search"></i> جستجوی هشتگ
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Tab 4: User Membership Check -->
+                    <div id="tab-user-groups" class="tab-pane">
+                        <div class="card search-control-card">
+                            <div class="alert alert-warning mb-15">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span><strong>محدودیت API تلگرام:</strong> به دلیل سیاست‌های حریم خصوصی تلگرام، امکان دریافت تمام گروه‌های یک کاربر به طور مستقیم وجود ندارد. این بخش <strong>کانال‌ها و گروه‌های عمومی مشترکی</strong> که شما (اکانت خودتان) با کاربر هدف در آن‌ها عضو هستید را نشان می‌دهد.</span>
+                            </div>
+                            <form id="form-search-user-groups" class="search-form">
+                                <div class="search-input-wrapper">
+                                    <i class="fas fa-user-tag search-input-icon"></i>
+                                    <input type="text" id="query-user-groups" placeholder="آیدی عددی یا نام کاربری شخص (مثال: @username یا 12345678)..." required dir="ltr">
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-users-cog"></i> بررسی گروه‌های مشترک
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Search Results Display Area -->
+                    <div id="search-loading" class="search-loading hidden">
+                        <div class="spinner"></div>
+                        <p>در حال جستجو در پایگاه داده تلگرام...</p>
+                    </div>
+
+                    <div id="results-container" class="results-container">
+                        <!-- Cards will be dynamically injected here -->
+                        <div class="empty-state">
+                            <i class="fas fa-search-plus"></i>
+                            <h3>آماده برای جستجو</h3>
+                            <p>از یکی از سربرگ‌های بالا برای شروع جستجوی عمومی استفاده کنید.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>جستجوگر سراسری تلگرام • طراحی شده برای کارکرد لوکال‌هاست • اوپن سورس</p>
+            <div id="footer-actions" class="footer-actions hidden">
+                <button id="btn-reconfigure" class="btn btn-sm btn-outline"><i class="fas fa-cog"></i> تغییر کلیدهای API</button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
